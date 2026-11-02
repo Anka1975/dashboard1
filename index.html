@@ -246,6 +246,7 @@
           <div class="chart-wrap">
             <canvas id="scatter"></canvas>
           </div>
+          <p class="sub">Pionowe linie P50, P85 i P95 pokazują percentyle czasu realizacji widocznych punktów.</p>
 
           <p id="status">Wczytywanie danych...</p>
 
@@ -415,7 +416,7 @@
       function datasetForSize(records, size) {
         return {
           label: size,
-          data: records.filter((r) => r.size === size).map((r) => ({ x: r.completionTs, y: r.leadTime, rawRecord: r })),
+          data: records.filter((r) => r.size === size).map((r) => ({ x: r.leadTime, y: r.completionTs, rawRecord: r })),
           backgroundColor: SIZE_COLORS[size],
           borderColor: "#0b1220",
           borderWidth: 1.2,
@@ -426,13 +427,46 @@
 
       function updateChart(records) {
         const datasets = ["S", "M", "L"].map((size) => datasetForSize(records, size));
+        const values = records.map((r) => r.leadTime).sort((a, b) => a - b);
+        const percentiles = [50, 85, 95].map((p) => ({ label: `P${p}`, value: percentile(values, p) }));
         if (!state.chart) {
           state.chart = new Chart(document.getElementById("scatter"), {
             type: "scatter",
             data: { datasets },
+            plugins: [{
+              id: "percentileLines",
+              afterDatasetsDraw(chart) {
+                const { ctx, chartArea, scales } = chart;
+                ctx.save();
+                ctx.font = "bold 12px sans-serif";
+                ctx.textBaseline = "top";
+                chart.options.plugins.percentileLines.values.forEach(({ label, value }, index) => {
+                  if (value === null) return;
+                  const x = scales.x.getPixelForValue(value);
+                  ctx.strokeStyle = "#e5e7eb";
+                  ctx.lineWidth = 1.5;
+                  ctx.setLineDash([[6, 4], [3, 3], [10, 4, 2, 4]][index]);
+                  ctx.beginPath();
+                  ctx.moveTo(x, chartArea.top);
+                  ctx.lineTo(x, chartArea.bottom);
+                  ctx.stroke();
+                  const text = `${label}: ${value.toFixed(1)} dni`;
+                  const width = ctx.measureText(text).width;
+                  const left = Math.max(chartArea.left, Math.min(x + 4, chartArea.right - width - 8));
+                  const top = chartArea.top + 6 + index * 22;
+                  ctx.fillStyle = "#111827";
+                  ctx.fillRect(left, top, width + 8, 18);
+                  ctx.fillStyle = "#e5e7eb";
+                  ctx.fillText(text, left + 4, top + 2);
+                });
+                ctx.restore();
+              }
+            }],
             options: {
               maintainAspectRatio: false,
               plugins: {
+                percentileLines: { values: percentiles },
+                legend: { onClick: () => {} },
                 tooltip: {
                   callbacks: {
                     label(context) {
@@ -445,12 +479,13 @@
               scales: {
                 x: {
                   type: "linear",
-                  title: { display: true, text: "Data ukończenia" },
-                  ticks: { callback: (value) => formatDate(new Date(value)) },
+                  title: { display: true, text: "Czas realizacji (dni)" },
                   grid: { color: "rgba(156,163,175,0.18)" }
                 },
                 y: {
-                  title: { display: true, text: "Czas realizacji (dni)" },
+                  type: "linear",
+                  title: { display: true, text: "Data ukończenia" },
+                  ticks: { callback: (value) => formatDate(new Date(value)) },
                   grid: { color: "rgba(156,163,175,0.18)" }
                 }
               }
@@ -459,6 +494,7 @@
           return;
         }
         state.chart.data.datasets = datasets;
+        state.chart.options.plugins.percentileLines.values = percentiles;
         state.chart.update();
       }
 
