@@ -246,7 +246,7 @@
           <div class="chart-wrap">
             <canvas id="scatter"></canvas>
           </div>
-          <p class="sub">Pionowe linie P50, P85 i P95 pokazują percentyle czasu realizacji widocznych punktów.</p>
+          <p class="sub">Poziome linie P50, P85 i P95 pokazują percentyle czasu realizacji widocznych punktów.</p>
 
           <p id="status">Wczytywanie danych...</p>
 
@@ -416,7 +416,7 @@
       function datasetForSize(records, size) {
         return {
           label: size,
-          data: records.filter((r) => r.size === size).map((r) => ({ x: r.leadTime, y: r.completionTs, rawRecord: r })),
+          data: records.filter((r) => r.size === size).map((r) => ({ x: r.completionTs, y: r.leadTime, rawRecord: r })),
           backgroundColor: SIZE_COLORS[size],
           borderColor: "#0b1220",
           borderWidth: 1.2,
@@ -442,18 +442,18 @@
                 ctx.textBaseline = "top";
                 chart.options.plugins.percentileLines.values.forEach(({ label, value }, index) => {
                   if (value === null) return;
-                  const x = scales.x.getPixelForValue(value);
+                  const y = scales.y.getPixelForValue(value);
                   ctx.strokeStyle = "#e5e7eb";
                   ctx.lineWidth = 1.5;
                   ctx.setLineDash([[6, 4], [3, 3], [10, 4, 2, 4]][index]);
                   ctx.beginPath();
-                  ctx.moveTo(x, chartArea.top);
-                  ctx.lineTo(x, chartArea.bottom);
+                  ctx.moveTo(chartArea.left, y);
+                  ctx.lineTo(chartArea.right, y);
                   ctx.stroke();
                   const text = `${label}: ${value.toFixed(1)} dni`;
                   const width = ctx.measureText(text).width;
-                  const left = Math.max(chartArea.left, Math.min(x + 4, chartArea.right - width - 8));
-                  const top = chartArea.top + 6 + index * 22;
+                  const left = chartArea.left + 6 + index * (chartArea.right - chartArea.left) / 3;
+                  const top = Math.max(chartArea.top, Math.min(y - 20, chartArea.bottom - 18));
                   ctx.fillStyle = "#111827";
                   ctx.fillRect(left, top, width + 8, 18);
                   ctx.fillStyle = "#e5e7eb";
@@ -479,13 +479,13 @@
               scales: {
                 x: {
                   type: "linear",
-                  title: { display: true, text: "Czas realizacji (dni)" },
+                  title: { display: true, text: "Data ukończenia" },
+                  ticks: { callback: (value) => formatDate(new Date(value)) },
                   grid: { color: "rgba(156,163,175,0.18)" }
                 },
                 y: {
                   type: "linear",
-                  title: { display: true, text: "Data ukończenia" },
-                  ticks: { callback: (value) => formatDate(new Date(value)) },
+                  title: { display: true, text: "Czas realizacji (dni)" },
                   grid: { color: "rgba(156,163,175,0.18)" }
                 }
               }
