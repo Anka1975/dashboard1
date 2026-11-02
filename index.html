@@ -1,20 +1,25 @@
-
 <!doctype html>
 <html lang="pl">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Dashboard czasów realizacji</title>
+    <title>Dashboard Lead Time</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
       :root {
         color-scheme: light dark;
         --bg: #0f172a;
-        --card: #111827;
+        --panel: #111827;
+        --line: #1f2937;
         --text: #e5e7eb;
         --muted: #9ca3af;
-        --accent: #60a5fa;
+        --s: #60a5fa;
+        --m: #34d399;
+        --l: #fbbf24;
+      }
+      * {
+        box-sizing: border-box;
       }
       body {
         margin: 0;
@@ -23,46 +28,253 @@
         color: var(--text);
       }
       main {
-        max-width: 1100px;
+        max-width: 1220px;
         margin: 0 auto;
-        padding: 24px;
+        padding: 20px;
       }
       h1 {
-        margin-top: 0;
-        margin-bottom: 4px;
+        margin: 0 0 6px;
       }
-      p {
-        margin-top: 0;
+      .sub {
+        margin: 0 0 18px;
         color: var(--muted);
       }
-      .card {
-        background: var(--card);
-        border: 1px solid #1f2937;
-        border-radius: 12px;
-        padding: 16px;
+      .layout {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: 16px;
       }
-      canvas {
-        width: 100%;
-        height: 520px;
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px;
+      }
+      .panel h2 {
+        margin: 0 0 12px;
+        font-size: 1rem;
+      }
+      .stack {
+        display: grid;
+        gap: 10px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .row.wrap {
+        flex-wrap: wrap;
+      }
+      label,
+      legend {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+        color: var(--text);
+        background: #0b1220;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        padding: 7px 9px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: #475569;
+      }
+      button.primary {
+        background: #1d4ed8;
+        border-color: #2563eb;
+      }
+      button.warn {
+        background: #7c2d12;
+        border-color: #9a3412;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(110px, 1fr));
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 9px;
+        background: #0b1220;
+      }
+      .metric b {
+        display: block;
+        font-size: 1.05rem;
+      }
+      .metric span {
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+      .chart-wrap {
+        height: 560px;
       }
       #status {
         margin-top: 8px;
         color: var(--muted);
       }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.86rem;
+      }
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 6px;
+        text-align: left;
+      }
+      .legend-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        display: inline-block;
+      }
+      @media (max-width: 980px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        .metrics {
+          grid-template-columns: repeat(3, minmax(110px, 1fr));
+        }
+      }
     </style>
   </head>
   <body>
     <main>
-      <h1>Czasy realizacji — scatterplot</h1>
-      <p>Dane źródłowe: <code>Lead Times - 2024-25.xlsx</code></p>
-      <div class="card">
-        <canvas id="leadTimeChart"></canvas>
-        <div id="status">Wczytywanie danych...</div>
+      <h1>Dashboard czasu realizacji</h1>
+      <p class="sub">Źródło danych: <code>Lead Times - 2024-25.xlsx</code></p>
+
+      <div class="layout">
+        <aside class="panel stack">
+          <section>
+            <h2>Filtry</h2>
+            <div class="stack">
+              <fieldset class="stack" style="border: 0; padding: 0; margin: 0">
+                <legend>Rozmiar</legend>
+                <label><input type="checkbox" class="size-filter" value="S" checked /> S</label>
+                <label><input type="checkbox" class="size-filter" value="M" checked /> M</label>
+                <label><input type="checkbox" class="size-filter" value="L" checked /> L</label>
+              </fieldset>
+              <label>
+                Data od
+                <input id="dateFrom" type="date" />
+              </label>
+              <label>
+                Data do
+                <input id="dateTo" type="date" />
+              </label>
+              <label>
+                Lead time min (dni)
+                <input id="leadMin" type="number" step="1" min="0" />
+              </label>
+              <label>
+                Lead time max (dni)
+                <input id="leadMax" type="number" step="1" min="0" />
+              </label>
+              <div class="row wrap">
+                <button id="resetFilters">Reset filtrów</button>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2>Outliery</h2>
+            <div class="stack">
+              <p style="margin: 0; color: var(--muted); font-size: 0.86rem">Metoda: IQR (1.5 × IQR) na aktualnie przefiltrowanych punktach.</p>
+              <div class="row wrap">
+                <button id="excludeOutliers" class="warn">Wyklucz outliery</button>
+                <button id="restoreAll">Przywróć wszystkie</button>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2>Dodaj punkt</h2>
+            <form id="addPointForm" class="stack">
+              <label>
+                Data ukończenia
+                <input id="newDate" type="date" required />
+              </label>
+              <label>
+                Rozmiar
+                <select id="newSize" required>
+                  <option value="S">S</option>
+                  <option value="M">M</option>
+                  <option value="L">L</option>
+                </select>
+              </label>
+              <label>
+                Lead time (dni)
+                <input id="newLeadTime" type="number" step="1" min="0" required />
+              </label>
+              <button type="submit" class="primary">Dodaj</button>
+            </form>
+          </section>
+        </aside>
+
+        <section class="panel">
+          <div class="metrics">
+            <div class="metric"><b id="mCountAll">0</b><span>Wszystkie</span></div>
+            <div class="metric"><b id="mCountShown">0</b><span>Widoczne</span></div>
+            <div class="metric"><b id="mExcluded">0</b><span>Wykluczone</span></div>
+            <div class="metric"><b id="mP50">-</b><span>P50 (dni)</span></div>
+            <div class="metric"><b id="mP85">-</b><span>P85 (dni)</span></div>
+            <div class="metric"><b id="mP95">-</b><span>P95 (dni)</span></div>
+          </div>
+
+          <div class="row wrap" style="margin-bottom: 8px">
+            <span class="legend-chip"><span class="dot" style="background: var(--s)"></span>S</span>
+            <span class="legend-chip"><span class="dot" style="background: var(--m)"></span>M</span>
+            <span class="legend-chip"><span class="dot" style="background: var(--l)"></span>L</span>
+          </div>
+
+          <div class="chart-wrap">
+            <canvas id="scatter"></canvas>
+          </div>
+
+          <p id="status">Wczytywanie danych...</p>
+
+          <h2>Wykluczone punkty</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Rozmiar</th>
+                <th>Lead time</th>
+                <th>Źródło</th>
+                <th>Akcja</th>
+              </tr>
+            </thead>
+            <tbody id="excludedBody"></tbody>
+          </table>
+        </section>
       </div>
     </main>
 
     <script>
-      const PL_MONTHS = {
+      const SOURCE_XLSX_FILE = "./Lead Times - 2024-25.xlsx";
+      const XLSX_COLUMN_MAP = {
+        completionDate: "Data ukończenia",
+        size: "Deklarowany rozmiar",
+        leadTime: "Czas realizacji"
+      };
+      const SIZE_COLORS = { S: "#60a5fa", M: "#34d399", L: "#fbbf24" };
+      const POLISH_MONTHS = {
         stycznia: 0,
         lutego: 1,
         marca: 2,
@@ -71,107 +283,161 @@
         czerwca: 5,
         lipca: 6,
         sierpnia: 7,
-        września: 8,
+        wrzesnia: 8,
         pazdziernika: 9,
-        października: 9,
         listopada: 10,
         grudnia: 11
       };
 
-      function parsePolishDate(label) {
-        if (typeof label !== "string") return null;
-        const normalized = label
-          .trim()
-          .toLowerCase()
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "");
-        const match = normalized.match(/^(\d{1,2})\s+([a-ząćęłńóśźż]+)\s+(\d{4})$/i);
+      const state = {
+        records: [],
+        excludedIds: new Set(),
+        chart: null,
+        idCounter: 1
+      };
+
+      const ui = {
+        status: document.getElementById("status"),
+        sizeFilters: [...document.querySelectorAll(".size-filter")],
+        dateFrom: document.getElementById("dateFrom"),
+        dateTo: document.getElementById("dateTo"),
+        leadMin: document.getElementById("leadMin"),
+        leadMax: document.getElementById("leadMax"),
+        mCountAll: document.getElementById("mCountAll"),
+        mCountShown: document.getElementById("mCountShown"),
+        mExcluded: document.getElementById("mExcluded"),
+        mP50: document.getElementById("mP50"),
+        mP85: document.getElementById("mP85"),
+        mP95: document.getElementById("mP95"),
+        excludedBody: document.getElementById("excludedBody"),
+        addPointForm: document.getElementById("addPointForm")
+      };
+
+      function formatDate(date) {
+        return new Intl.DateTimeFormat("pl-PL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+      }
+
+      function toISODate(date) {
+        return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      }
+
+      function excelSerialToDate(serial) {
+        const utc = Math.round((serial - 25569) * 86400 * 1000);
+        return new Date(utc);
+      }
+
+      function parseDate(value) {
+        if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+        if (typeof value === "number") return excelSerialToDate(value);
+        if (typeof value !== "string") return null;
+
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+        const direct = new Date(trimmed);
+        if (!Number.isNaN(direct.getTime())) return direct;
+
+        const normalized = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const match = normalized.match(/^(\d{1,2})\s+([a-z]+)\s+(\d{4})$/);
         if (!match) return null;
         const day = Number(match[1]);
-        const month = PL_MONTHS[match[2]];
+        const month = POLISH_MONTHS[match[2]];
         const year = Number(match[3]);
-        if (!Number.isInteger(day) || month === undefined || !Number.isInteger(year)) return null;
+        if (!Number.isInteger(day) || month === undefined) return null;
         return new Date(year, month, day);
       }
 
-      function colorForSize(size) {
-        switch ((size || "").toUpperCase()) {
-          case "S":
-            return "rgba(96, 165, 250, 0.9)";
-          case "M":
-            return "rgba(52, 211, 153, 0.9)";
-          case "L":
-            return "rgba(251, 191, 36, 0.9)";
-          default:
-            return "rgba(196, 181, 253, 0.9)";
-        }
+      function makeRecord({ completionDate, size, leadTime, source }) {
+        const parsedDate = parseDate(completionDate);
+        const normalizedSize = String(size || "").toUpperCase().trim();
+        const normalizedLeadTime = Number(leadTime);
+        if (!parsedDate || !["S", "M", "L"].includes(normalizedSize) || !Number.isFinite(normalizedLeadTime)) return null;
+        const record = {
+          id: `p-${state.idCounter++}`,
+          completionDate: parsedDate,
+          completionTs: parsedDate.getTime(),
+          completionDateLabel: formatDate(parsedDate),
+          size: normalizedSize,
+          leadTime: normalizedLeadTime,
+          source
+        };
+        return record;
       }
 
-      function formatDate(date) {
-        return new Intl.DateTimeFormat("pl-PL", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric"
-        }).format(date);
+      function percentile(sortedValues, p) {
+        if (!sortedValues.length) return null;
+        const idx = (p / 100) * (sortedValues.length - 1);
+        const low = Math.floor(idx);
+        const high = Math.ceil(idx);
+        if (low === high) return sortedValues[low];
+        const ratio = idx - low;
+        return sortedValues[low] + (sortedValues[high] - sortedValues[low]) * ratio;
       }
 
-      async function loadWorkbook() {
-        const status = document.getElementById("status");
-        try {
-          const response = await fetch("./Lead Times - 2024-25.xlsx");
-          if (!response.ok) throw new Error(`Nie udało się pobrać pliku: ${response.status}`);
-          const buffer = await response.arrayBuffer();
-          const workbook = XLSX.read(buffer, { type: "array" });
-          const sheetName = workbook.SheetNames[0];
-          const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
-            defval: null
-          });
+      function getFilters() {
+        return {
+          sizes: new Set(ui.sizeFilters.filter((el) => el.checked).map((el) => el.value)),
+          from: ui.dateFrom.value ? new Date(ui.dateFrom.value + "T00:00:00").getTime() : null,
+          to: ui.dateTo.value ? new Date(ui.dateTo.value + "T23:59:59").getTime() : null,
+          leadMin: ui.leadMin.value === "" ? null : Number(ui.leadMin.value),
+          leadMax: ui.leadMax.value === "" ? null : Number(ui.leadMax.value)
+        };
+      }
 
-          const points = rows
-            .map((row) => {
-              const date = parsePolishDate(row["Data ukończenia"]);
-              const leadTime = Number(row["Czas realizacji"]);
-              const size = row["Deklarowany rozmiar"] ?? "N/D";
-              if (!date || !Number.isFinite(leadTime)) return null;
-              return {
-                x: date.getTime(),
-                y: leadTime,
-                size,
-                completionDate: formatDate(date)
-              };
-            })
-            .filter(Boolean)
-            .sort((a, b) => a.x - b.x);
+      function matchesFilters(record, filters) {
+        if (!filters.sizes.has(record.size)) return false;
+        if (filters.from !== null && record.completionTs < filters.from) return false;
+        if (filters.to !== null && record.completionTs > filters.to) return false;
+        if (filters.leadMin !== null && record.leadTime < filters.leadMin) return false;
+        if (filters.leadMax !== null && record.leadTime > filters.leadMax) return false;
+        return true;
+      }
 
-          if (!points.length) throw new Error("Brak poprawnych danych do wyświetlenia.");
+      function currentFilteredRecords() {
+        const filters = getFilters();
+        return state.records.filter((record) => matchesFilters(record, filters));
+      }
 
-          const ctx = document.getElementById("leadTimeChart");
-          new Chart(ctx, {
+      function currentVisibleRecords() {
+        return currentFilteredRecords().filter((r) => !state.excludedIds.has(r.id));
+      }
+
+      function outlierIdsFrom(records) {
+        if (records.length < 4) return [];
+        const values = records.map((r) => r.leadTime).sort((a, b) => a - b);
+        const q1 = percentile(values, 25);
+        const q3 = percentile(values, 75);
+        const iqr = q3 - q1;
+        const lower = q1 - 1.5 * iqr;
+        const upper = q3 + 1.5 * iqr;
+        return records.filter((r) => r.leadTime < lower || r.leadTime > upper).map((r) => r.id);
+      }
+
+      function datasetForSize(records, size) {
+        return {
+          label: size,
+          data: records.filter((r) => r.size === size).map((r) => ({ x: r.completionTs, y: r.leadTime, rawRecord: r })),
+          backgroundColor: SIZE_COLORS[size],
+          borderColor: "#0b1220",
+          borderWidth: 1.2,
+          pointRadius: 6,
+          pointHoverRadius: 8
+        };
+      }
+
+      function updateChart(records) {
+        const datasets = ["S", "M", "L"].map((size) => datasetForSize(records, size));
+        if (!state.chart) {
+          state.chart = new Chart(document.getElementById("scatter"), {
             type: "scatter",
-            data: {
-              datasets: [
-                {
-                  label: "Elementy pracy",
-                  data: points,
-                  pointRadius: 6,
-                  pointHoverRadius: 8,
-                  pointBackgroundColor: (context) => colorForSize(context.raw?.size),
-                  pointBorderColor: "#0b1220",
-                  pointBorderWidth: 1
-                }
-              ]
-            },
+            data: { datasets },
             options: {
               maintainAspectRatio: false,
               plugins: {
-                legend: {
-                  display: false
-                },
                 tooltip: {
                   callbacks: {
                     label(context) {
-                      const point = context.raw;
-                      return `Data: ${point.completionDate} | Rozmiar: ${point.size} | Czas: ${point.y} dni`;
+                      const r = context.raw.rawRecord;
+                      return `Rozmiar: ${r.size} | Lead time: ${r.leadTime} dni | Data: ${r.completionDateLabel}`;
                     }
                   }
                 }
@@ -179,39 +445,182 @@
               scales: {
                 x: {
                   type: "linear",
-                  title: {
-                    display: true,
-                    text: "Data ukończenia"
-                  },
-                  ticks: {
-                    callback(value) {
-                      return formatDate(new Date(value));
-                    }
-                  },
-                  grid: {
-                    color: "rgba(156, 163, 175, 0.18)"
-                  }
+                  title: { display: true, text: "Data ukończenia" },
+                  ticks: { callback: (value) => formatDate(new Date(value)) },
+                  grid: { color: "rgba(156,163,175,0.18)" }
                 },
                 y: {
-                  title: {
-                    display: true,
-                    text: "Czas realizacji (dni)"
-                  },
-                  grid: {
-                    color: "rgba(156, 163, 175, 0.18)"
-                  }
+                  title: { display: true, text: "Czas realizacji (dni)" },
+                  grid: { color: "rgba(156,163,175,0.18)" }
                 }
               }
             }
           });
+          return;
+        }
+        state.chart.data.datasets = datasets;
+        state.chart.update();
+      }
 
-          status.textContent = `Załadowano ${points.length} rekordów.`;
+      function updateMetrics(visibleRecords) {
+        const values = visibleRecords.map((r) => r.leadTime).sort((a, b) => a - b);
+        const p50 = percentile(values, 50);
+        const p85 = percentile(values, 85);
+        const p95 = percentile(values, 95);
+
+        ui.mCountAll.textContent = String(state.records.length);
+        ui.mCountShown.textContent = String(visibleRecords.length);
+        ui.mExcluded.textContent = String(state.excludedIds.size);
+        ui.mP50.textContent = p50 === null ? "-" : p50.toFixed(1);
+        ui.mP85.textContent = p85 === null ? "-" : p85.toFixed(1);
+        ui.mP95.textContent = p95 === null ? "-" : p95.toFixed(1);
+      }
+
+      function updateExcludedTable() {
+        const excludedRecords = state.records
+          .filter((r) => state.excludedIds.has(r.id))
+          .sort((a, b) => a.completionTs - b.completionTs);
+        if (!excludedRecords.length) {
+          ui.excludedBody.innerHTML = `<tr><td colspan="5" style="color: var(--muted)">Brak wykluczonych punktów.</td></tr>`;
+          return;
+        }
+        ui.excludedBody.innerHTML = excludedRecords
+          .map(
+            (r) => `<tr>
+          <td>${r.completionDateLabel}</td>
+          <td>${r.size}</td>
+          <td>${r.leadTime}</td>
+          <td>${r.source}</td>
+          <td><button data-restore-id="${r.id}">Przywróć</button></td>
+        </tr>`
+          )
+          .join("");
+      }
+
+      function applyAndRender() {
+        const filtered = currentFilteredRecords();
+        const visible = filtered.filter((r) => !state.excludedIds.has(r.id));
+        updateChart(visible);
+        updateMetrics(visible);
+        updateExcludedTable();
+        ui.status.textContent = `Załadowano: ${state.records.length} | Po filtrach: ${filtered.length} | Widoczne: ${visible.length}`;
+      }
+
+      function initializeFilterRanges() {
+        const dates = state.records.map((r) => r.completionTs);
+        const leadTimes = state.records.map((r) => r.leadTime);
+        const minDate = new Date(Math.min(...dates));
+        const maxDate = new Date(Math.max(...dates));
+        const minLead = Math.floor(Math.min(...leadTimes));
+        const maxLead = Math.ceil(Math.max(...leadTimes));
+
+        ui.dateFrom.value = toISODate(minDate);
+        ui.dateTo.value = toISODate(maxDate);
+        ui.leadMin.value = String(minLead);
+        ui.leadMax.value = String(maxLead);
+
+        ui.leadMin.min = String(minLead);
+        ui.leadMin.max = String(maxLead);
+        ui.leadMax.min = String(minLead);
+        ui.leadMax.max = String(maxLead);
+      }
+
+      function extendRangesForRecord(record) {
+        const minLead = Number(ui.leadMin.min || record.leadTime);
+        const maxLead = Number(ui.leadMax.max || record.leadTime);
+        if (record.leadTime < minLead) {
+          ui.leadMin.min = String(Math.floor(record.leadTime));
+          if (Number(ui.leadMin.value) > record.leadTime) ui.leadMin.value = String(Math.floor(record.leadTime));
+        }
+        if (record.leadTime > maxLead) {
+          ui.leadMax.max = String(Math.ceil(record.leadTime));
+          if (Number(ui.leadMax.value) < record.leadTime) ui.leadMax.value = String(Math.ceil(record.leadTime));
+        }
+
+        const fromTs = ui.dateFrom.value ? new Date(ui.dateFrom.value + "T00:00:00").getTime() : record.completionTs;
+        const toTs = ui.dateTo.value ? new Date(ui.dateTo.value + "T23:59:59").getTime() : record.completionTs;
+        if (record.completionTs < fromTs) ui.dateFrom.value = toISODate(record.completionDate);
+        if (record.completionTs > toTs) ui.dateTo.value = toISODate(record.completionDate);
+      }
+
+      async function loadData() {
+        try {
+          const response = await fetch(SOURCE_XLSX_FILE);
+          if (!response.ok) throw new Error(`Nie udało się pobrać pliku XLSX: ${response.status}`);
+          const workbook = XLSX.read(await response.arrayBuffer(), { type: "array" });
+          const firstSheet = workbook.SheetNames[0];
+          const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: null, raw: true });
+
+          const parsed = rows
+            .map((row) =>
+              makeRecord({
+                completionDate: row[XLSX_COLUMN_MAP.completionDate],
+                size: row[XLSX_COLUMN_MAP.size],
+                leadTime: row[XLSX_COLUMN_MAP.leadTime],
+                source: "xlsx"
+              })
+            )
+            .filter(Boolean);
+
+          if (!parsed.length) throw new Error("Nie znaleziono poprawnych rekordów w pliku XLSX.");
+          state.records = parsed.sort((a, b) => a.completionTs - b.completionTs);
+          initializeFilterRanges();
+          applyAndRender();
         } catch (error) {
-          status.textContent = `Błąd: ${error.message}`;
+          ui.status.textContent = `Błąd: ${error.message}`;
         }
       }
 
-      loadWorkbook();
+      ui.sizeFilters.forEach((el) => el.addEventListener("change", applyAndRender));
+      [ui.dateFrom, ui.dateTo, ui.leadMin, ui.leadMax].forEach((el) => el.addEventListener("input", applyAndRender));
+
+      document.getElementById("resetFilters").addEventListener("click", () => {
+        ui.sizeFilters.forEach((el) => {
+          el.checked = true;
+        });
+        initializeFilterRanges();
+        applyAndRender();
+      });
+
+      document.getElementById("excludeOutliers").addEventListener("click", () => {
+        const visible = currentVisibleRecords();
+        const outlierIds = outlierIdsFrom(visible);
+        outlierIds.forEach((id) => state.excludedIds.add(id));
+        applyAndRender();
+      });
+
+      document.getElementById("restoreAll").addEventListener("click", () => {
+        state.excludedIds.clear();
+        applyAndRender();
+      });
+
+      ui.excludedBody.addEventListener("click", (event) => {
+        const id = event.target?.dataset?.restoreId;
+        if (!id) return;
+        state.excludedIds.delete(id);
+        applyAndRender();
+      });
+
+      ui.addPointForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const record = makeRecord({
+          completionDate: document.getElementById("newDate").value,
+          size: document.getElementById("newSize").value,
+          leadTime: document.getElementById("newLeadTime").value,
+          source: "manual"
+        });
+        if (!record) {
+          ui.status.textContent = "Błąd: niepoprawne dane nowego punktu.";
+          return;
+        }
+        state.records.push(record);
+        state.records.sort((a, b) => a.completionTs - b.completionTs);
+        extendRangesForRecord(record);
+        applyAndRender();
+        ui.addPointForm.reset();
+      });
+
+      loadData();
     </script>
   </body>
 </html>
