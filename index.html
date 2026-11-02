@@ -1,1 +1,217 @@
 
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard czasów realizacji</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0f172a;
+        --card: #111827;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --accent: #60a5fa;
+      }
+      body {
+        margin: 0;
+        font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      h1 {
+        margin-top: 0;
+        margin-bottom: 4px;
+      }
+      p {
+        margin-top: 0;
+        color: var(--muted);
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid #1f2937;
+        border-radius: 12px;
+        padding: 16px;
+      }
+      canvas {
+        width: 100%;
+        height: 520px;
+      }
+      #status {
+        margin-top: 8px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Czasy realizacji — scatterplot</h1>
+      <p>Dane źródłowe: <code>Lead Times - 2024-25.xlsx</code></p>
+      <div class="card">
+        <canvas id="leadTimeChart"></canvas>
+        <div id="status">Wczytywanie danych...</div>
+      </div>
+    </main>
+
+    <script>
+      const PL_MONTHS = {
+        stycznia: 0,
+        lutego: 1,
+        marca: 2,
+        kwietnia: 3,
+        maja: 4,
+        czerwca: 5,
+        lipca: 6,
+        sierpnia: 7,
+        września: 8,
+        pazdziernika: 9,
+        października: 9,
+        listopada: 10,
+        grudnia: 11
+      };
+
+      function parsePolishDate(label) {
+        if (typeof label !== "string") return null;
+        const normalized = label
+          .trim()
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "");
+        const match = normalized.match(/^(\d{1,2})\s+([a-ząćęłńóśźż]+)\s+(\d{4})$/i);
+        if (!match) return null;
+        const day = Number(match[1]);
+        const month = PL_MONTHS[match[2]];
+        const year = Number(match[3]);
+        if (!Number.isInteger(day) || month === undefined || !Number.isInteger(year)) return null;
+        return new Date(year, month, day);
+      }
+
+      function colorForSize(size) {
+        switch ((size || "").toUpperCase()) {
+          case "S":
+            return "rgba(96, 165, 250, 0.9)";
+          case "M":
+            return "rgba(52, 211, 153, 0.9)";
+          case "L":
+            return "rgba(251, 191, 36, 0.9)";
+          default:
+            return "rgba(196, 181, 253, 0.9)";
+        }
+      }
+
+      function formatDate(date) {
+        return new Intl.DateTimeFormat("pl-PL", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric"
+        }).format(date);
+      }
+
+      async function loadWorkbook() {
+        const status = document.getElementById("status");
+        try {
+          const response = await fetch("./Lead Times - 2024-25.xlsx");
+          if (!response.ok) throw new Error(`Nie udało się pobrać pliku: ${response.status}`);
+          const buffer = await response.arrayBuffer();
+          const workbook = XLSX.read(buffer, { type: "array" });
+          const sheetName = workbook.SheetNames[0];
+          const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+            defval: null
+          });
+
+          const points = rows
+            .map((row) => {
+              const date = parsePolishDate(row["Data ukończenia"]);
+              const leadTime = Number(row["Czas realizacji"]);
+              const size = row["Deklarowany rozmiar"] ?? "N/D";
+              if (!date || !Number.isFinite(leadTime)) return null;
+              return {
+                x: date.getTime(),
+                y: leadTime,
+                size,
+                completionDate: formatDate(date)
+              };
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.x - b.x);
+
+          if (!points.length) throw new Error("Brak poprawnych danych do wyświetlenia.");
+
+          const ctx = document.getElementById("leadTimeChart");
+          new Chart(ctx, {
+            type: "scatter",
+            data: {
+              datasets: [
+                {
+                  label: "Elementy pracy",
+                  data: points,
+                  pointRadius: 6,
+                  pointHoverRadius: 8,
+                  pointBackgroundColor: (context) => colorForSize(context.raw?.size),
+                  pointBorderColor: "#0b1220",
+                  pointBorderWidth: 1
+                }
+              ]
+            },
+            options: {
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  display: false
+                },
+                tooltip: {
+                  callbacks: {
+                    label(context) {
+                      const point = context.raw;
+                      return `Data: ${point.completionDate} | Rozmiar: ${point.size} | Czas: ${point.y} dni`;
+                    }
+                  }
+                }
+              },
+              scales: {
+                x: {
+                  type: "linear",
+                  title: {
+                    display: true,
+                    text: "Data ukończenia"
+                  },
+                  ticks: {
+                    callback(value) {
+                      return formatDate(new Date(value));
+                    }
+                  },
+                  grid: {
+                    color: "rgba(156, 163, 175, 0.18)"
+                  }
+                },
+                y: {
+                  title: {
+                    display: true,
+                    text: "Czas realizacji (dni)"
+                  },
+                  grid: {
+                    color: "rgba(156, 163, 175, 0.18)"
+                  }
+                }
+              }
+            }
+          });
+
+          status.textContent = `Załadowano ${points.length} rekordów.`;
+        } catch (error) {
+          status.textContent = `Błąd: ${error.message}`;
+        }
+      }
+
+      loadWorkbook();
+    </script>
+  </body>
+</html>
