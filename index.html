@@ -118,6 +118,19 @@
       .chart-wrap {
         height: 560px;
       }
+      [hidden] {
+        display: none !important;
+      }
+      .tabs {
+        margin: 18px 0;
+      }
+      .tabs [aria-selected="true"] {
+        background: #1d4ed8;
+        border-color: #2563eb;
+      }
+      .delivery-chart {
+        height: 360px;
+      }
       #status {
         margin-top: 8px;
         color: var(--muted);
@@ -157,6 +170,12 @@
   <body>
     <main>
       <h1>Dashboard czasu realizacji</h1>
+      <div class="row wrap tabs" role="tablist" aria-label="Widok dashboardu">
+        <button id="leadTimeTab" role="tab" aria-selected="true" aria-controls="leadTimePanel">Czas realizacji</button>
+        <button id="deliveryTab" role="tab" aria-selected="false" aria-controls="deliveryPanel" tabindex="-1">Tempo dostarczania</button>
+      </div>
+
+      <div id="leadTimePanel" role="tabpanel" aria-labelledby="leadTimeTab">
       <p class="sub">Źródło danych: <code>Lead Times - 2024-25.xlsx</code></p>
 
       <div class="layout">
@@ -265,6 +284,37 @@
           </table>
         </section>
       </div>
+      </div>
+
+      <section id="deliveryPanel" role="tabpanel" aria-labelledby="deliveryTab" hidden>
+        <p class="sub">Źródło danych: <code>Throughput Daily.xlsx</code>. Plik zawiera sumy dzienne, bez identyfikatorów poszczególnych elementów. Jedna obserwacja oznacza jeden dzień, a tempo to liczba dostarczonych elementów tego dnia, także zero. Brakujące daty nie są uzupełniane.</p>
+        <section class="panel">
+          <h2>Filtry tempa dostarczania</h2>
+          <form id="deliveryFilters" class="row wrap">
+            <label>Data od <input id="deliveryFrom" type="date" /></label>
+            <label>Data do <input id="deliveryTo" type="date" /></label>
+            <button type="reset">Reset filtrów</button>
+          </form>
+        </section>
+        <p id="deliveryStatus" role="status">Wczytywanie danych...</p>
+        <div class="stack">
+          <section class="panel">
+            <h2>Tempo dostarczania</h2>
+            <div class="chart-wrap delivery-chart">
+              <canvas id="deliveryChart" role="img" aria-label="Dzienna liczba dostarczonych elementów, średnia i granice procesu"></canvas>
+            </div>
+            <p id="deliverySummary" class="sub"></p>
+            <p class="sub">UCL = średnia + 2,66 × MR_avg. LCL = max(0, średnia − 2,66 × MR_avg). Wszystkie linie są przeliczane dla wybranego zakresu dat.</p>
+          </section>
+          <section class="panel">
+            <h2>Moving Range</h2>
+            <div class="chart-wrap delivery-chart">
+              <canvas id="movingRangeChart" role="img" aria-label="Różnice bezwzględne między kolejnymi dziennymi wartościami tempa dostarczania"></canvas>
+            </div>
+            <p class="sub">MR = |tempo bieżącej obserwacji − tempo poprzedniej obserwacji|. Pierwsza obserwacja nie ma MR; średnia MR obejmuje wyłącznie kolejne pary po filtrowaniu. Oba wykresy korzystają z tych samych filtrów tej zakładki, niezależnych od filtrów czasu realizacji.</p>
+          </section>
+        </div>
+      </section>
     </main>
 
     <script>
@@ -607,6 +657,197 @@
         }
       }
 
+      const deliveryState = { records: [], charts: [] };
+
+      function calculateDeliveryStats(records) {
+        if (!records.length) throw new Error("Brak danych tempa dostarczania.");
+        const values = records.map((record) => record.value);
+        const ranges = values.slice(1).map((value, index) => Math.abs(value - values[index]));
+        const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+        const meanRange = ranges.length ? ranges.reduce((sum, value) => sum + value, 0) / ranges.length : null;
+        return {
+          mean,
+          ranges,
+          meanRange,
+          upper: meanRange === null ? null : mean + 2.66 * meanRange,
+          lower: meanRange === null ? null : Math.max(0, mean - 2.66 * meanRange)
+        };
+      }
+
+      function parseDeliveryRows(rows) {
+        if (!rows.length) throw new Error("Brak danych w pliku tempa dostarczania.");
+        const records = rows.map((row, index) => {
+          const date = parseDate(row["Data (DD/MM/YYYY)"]);
+          const value = row["Przepustowość"];
+          if (!date || !Number.isFinite(date.getTime()) || typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+            throw new Error(`Niepoprawna data lub przepustowość w wierszu ${index + 2}. Wymagane kolumny: Data (DD/MM/YYYY), Przepustowość.`);
+          }
+          return { date, value };
+        }).sort((a, b) => a.date - b.date);
+        const days = new Set(records.map((record) => toISODate(record.date)));
+        if (days.size !== records.length) throw new Error("Plik zawiera powtórzone daty. Oczekiwana jest jedna obserwacja dziennie.");
+        return records;
+      }
+
+      function renderDeliveryCharts(records) {
+        const stats = calculateDeliveryStats(records);
+        const number = (value) => value.toLocaleString("pl-PL", { maximumFractionDigits: 2 });
+        const labels = records.map((record) => formatDate(record.date));
+        const referenceLine = (label, value, color) => ({
+          label: `${label}: ${number(value)}`,
+          data: records.map(() => value),
+          borderColor: color,
+          borderDash: [6, 4],
+          borderWidth: 1.5,
+          pointRadius: 0,
+          pointHitRadius: 0
+        });
+        const options = (yTitle) => ({
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { labels: { color: "#e5e7eb" } },
+            tooltip: {
+              callbacks: {
+                title: (items) => items.length ? `Obserwacja dzienna: ${labels[items[0].dataIndex]}` : "",
+                afterBody: (items) => {
+                  if (!items.length) return [];
+                  const index = items[0].dataIndex;
+                  return [
+                    `Tempo: ${number(records[index].value)} elementów/dzień`,
+                    `MR: ${index === 0 ? "brak poprzedniej obserwacji" : number(stats.ranges[index - 1])}`
+                  ];
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              title: { display: true, text: "Data", color: "#e5e7eb" },
+              ticks: { color: "#9ca3af", maxTicksLimit: 12 },
+              grid: { color: "rgba(156,163,175,0.18)" }
+            },
+            y: {
+              beginAtZero: true,
+              title: { display: true, text: yTitle, color: "#e5e7eb" },
+              ticks: { color: "#9ca3af" },
+              grid: { color: "rgba(156,163,175,0.18)" }
+            }
+          }
+        });
+        const datasets = [
+          { label: "Dostarczone elementy", data: records.map((record) => record.value), borderColor: "#60a5fa", backgroundColor: "#60a5fa", borderWidth: 2, pointRadius: 3 },
+          referenceLine("Średnia", stats.mean, "#34d399")
+        ];
+        if (stats.meanRange !== null) {
+          datasets.push(referenceLine("UCL", stats.upper, "#fbbf24"));
+          datasets.push(referenceLine("LCL", stats.lower, "#f87171"));
+        }
+        deliveryState.charts.push(new Chart(document.getElementById("deliveryChart"), {
+          type: "line",
+          data: { labels, datasets },
+          options: options("Elementy / dzień")
+        }));
+        deliveryState.charts.push(new Chart(document.getElementById("movingRangeChart"), {
+          type: "line",
+          data: {
+            labels,
+            datasets: [{
+              label: "Moving Range",
+              data: [null, ...stats.ranges],
+              borderColor: "#a78bfa",
+              backgroundColor: "#a78bfa",
+              borderWidth: 2,
+              pointRadius: 3
+            }, ...(stats.meanRange === null ? [] : [referenceLine("MR_avg", stats.meanRange, "#34d399")])]
+          },
+          options: options("Różnica liczby elementów")
+        }));
+        document.getElementById("deliverySummary").textContent = `Średnia: ${number(stats.mean)} elementów/dzień | MR_avg: ${stats.meanRange === null ? "brak par obserwacji" : number(stats.meanRange)} | UCL: ${stats.upper === null ? "brak par obserwacji" : number(stats.upper)} | LCL: ${stats.lower === null ? "brak par obserwacji" : number(stats.lower)}`;
+      }
+
+      function clearDeliveryCharts() {
+        deliveryState.charts.forEach((chart) => chart.destroy());
+        deliveryState.charts = [];
+        document.getElementById("deliverySummary").textContent = "";
+      }
+
+      function applyDeliveryFilters() {
+        clearDeliveryCharts();
+        const status = document.getElementById("deliveryStatus");
+        const from = document.getElementById("deliveryFrom").value;
+        const to = document.getElementById("deliveryTo").value;
+        if (from && to && from > to) {
+          status.textContent = "Błąd: data od nie może być późniejsza niż data do.";
+          return;
+        }
+        const records = deliveryState.records.filter((record) => {
+          const date = toISODate(record.date);
+          return (!from || date >= from) && (!to || date <= to);
+        });
+        if (!records.length) {
+          status.textContent = "Brak obserwacji w wybranym zakresie dat.";
+          return;
+        }
+        try {
+          renderDeliveryCharts(records);
+          status.textContent = `Widoczne: ${records.length} z ${deliveryState.records.length} dni | ${formatDate(records[0].date)} – ${formatDate(records[records.length - 1].date)}.${records.length < 2 ? " Do wyliczenia MR, MR_avg, UCL i LCL wymagane są co najmniej dwie obserwacje." : ""}`;
+        } catch (error) {
+          clearDeliveryCharts();
+          status.textContent = `Błąd: ${error.message}`;
+        }
+      }
+
+      async function loadDeliveryData() {
+        const status = document.getElementById("deliveryStatus");
+        try {
+          const response = await fetch("./Throughput Daily.xlsx");
+          if (!response.ok) throw new Error(`Nie udało się pobrać pliku XLSX: ${response.status}`);
+          const workbook = XLSX.read(await response.arrayBuffer(), { type: "array" });
+          const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: null, raw: true });
+          deliveryState.records = parseDeliveryRows(rows);
+          applyDeliveryFilters();
+        } catch (error) {
+          clearDeliveryCharts();
+          status.textContent = `Błąd: ${error.message}`;
+        }
+      }
+
+      const deliveryFilters = document.getElementById("deliveryFilters");
+      deliveryFilters.addEventListener("submit", (event) => event.preventDefault());
+      deliveryFilters.addEventListener("input", applyDeliveryFilters);
+      deliveryFilters.addEventListener("reset", () => {
+        document.getElementById("deliveryFrom").value = "";
+        document.getElementById("deliveryTo").value = "";
+        applyDeliveryFilters();
+      });
+
+      const tabs = [...document.querySelectorAll('[role="tab"]')];
+      function activateTab(tab) {
+        tabs.forEach((item) => {
+          const selected = item === tab;
+          item.setAttribute("aria-selected", String(selected));
+          item.tabIndex = selected ? 0 : -1;
+          document.getElementById(item.getAttribute("aria-controls")).hidden = !selected;
+        });
+        state.chart?.resize();
+        deliveryState.charts.forEach((chart) => chart.resize());
+      }
+      tabs.forEach((tab, index) => {
+        tab.addEventListener("click", () => activateTab(tab));
+        tab.addEventListener("keydown", (event) => {
+          let next;
+          if (event.key === "ArrowRight") next = tabs[(index + 1) % tabs.length];
+          else if (event.key === "ArrowLeft") next = tabs[(index + tabs.length - 1) % tabs.length];
+          else if (event.key === "Home") next = tabs[0];
+          else if (event.key === "End") next = tabs[tabs.length - 1];
+          else return;
+          event.preventDefault();
+          activateTab(next);
+          next.focus();
+        });
+      });
+
       ui.sizeFilters.forEach((el) => el.addEventListener("change", applyAndRender));
       [ui.dateFrom, ui.dateTo, ui.leadMin, ui.leadMax].forEach((el) => el.addEventListener("input", applyAndRender));
 
@@ -657,6 +898,7 @@
       });
 
       loadData();
+      loadDeliveryData();
     </script>
   </body>
 </html>
