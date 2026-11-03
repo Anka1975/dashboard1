@@ -327,7 +327,19 @@
           </div>
           <button id="forecastRoadmap" class="primary">Przelicz prognozę · 2000 symulacji</button>
         </div>
+        <section class="panel" aria-label="Prywatny plan w Firebase">
+          <div class="row wrap">
+            <button id="roadmapLogin" disabled>Zaloguj przez Google</button>
+            <button id="roadmapLogout" hidden>Wyloguj</button>
+            <button id="roadmapReload" hidden>Wczytaj ponownie z bazy</button>
+            <button id="roadmapRetry" hidden>Ponów zapis</button>
+            <button id="roadmapImport" hidden>Importuj lokalny plan do konta</button>
+          </div>
+          <p id="roadmapCloudStatus" role="status" aria-live="polite">Łączenie z Firebase…</p>
+          <p class="sub">Po zalogowaniu Twój plan jest automatycznie zapisywany w bazie i dostępny na innych urządzeniach po zalogowaniu na to samo konto. Bez logowania zapis jest wyłącznie lokalny. Wyniki prognozy są przeliczane, nie zapisywane.</p>
+        </section>
         <p id="roadmapStatus" role="status" aria-live="polite"></p>
+        <div id="roadmapEditor">
         <details class="panel">
           <summary>Jak interpretować model?</summary>
           <p>Min/max to czas pracy w osobodniach przy pełnej dostępności jednej osoby, osobno dla każdej kompetencji elementu. Losowanie jest jednostajne i niezależne. Capacity to dostępne osobodni w miesiącu, rozłożone równomiernie na dni kalendarzowe (uwzględnij urlopy i dni wolne w capacity).</p>
@@ -365,6 +377,7 @@
           <p class="sub">Jasny pasek: P50 startu → P50 końca. Przedłużenie: P85 końca. Kreskowany pasek: P85 poza horyzontem. Czerwona kreska: fixed date. Dokładne daty i ryzyko w tabeli poniżej.</p>
           <div id="roadmapResults"><p>Wprowadź dane i przelicz prognozę. Początkowe dane są przykładowe.</p></div>
         </section>
+        </div>
       </section>
     </main>
 

@@ -29,15 +29,61 @@ wymagane kompetencje.
   Jeśli termin wykracza poza kalendarz capacity, podana szansa jest dolną granicą.
   Brak P85 nie oznacza braku pracy, tylko zbyt mało ukończeń w horyzoncie.
 
-Dane wejściowe są zapisywane w `localStorage` przeglądarki, nie na serwerze ani
-w repozytorium; nie są współdzielone między urządzeniami. Pierwsze otwarcie zawiera
-edytowalny przykład. Wyniki należy przeliczyć po zmianie danych lub ponownym
-otwarciu strony. To model planistyczny, nie gwarancja terminów.
+Dane wejściowe zalogowanego użytkownika są automatycznie zapisywane w Cloud
+Firestore, w dokumencie `users/{uid}/plans/roadmap`. Każde konto Google ma własny
+prywatny plan, dostępny na innych urządzeniach po zalogowaniu na to samo konto.
+Stan zapisu i błędy są widoczne nad edytorem. Przy błędzie zmiany pozostają tylko
+w otwartej karcie: użyj „Ponów zapis” przed jej zamknięciem. Równoczesna edycja na
+innym urządzeniu lub w innej karcie powoduje konflikt zamiast nadpisania nowszego
+planu; zachowaj swoje zmiany i użyj „Wczytaj ponownie z bazy”.
+
+Bez logowania działa dotychczasowy zapis w `localStorage`, tylko w tej
+przeglądarce. Plan lokalny nie jest automatycznie przypisywany do konta.
+Przycisk „Importuj lokalny plan do konta” przenosi go po potwierdzeniu,
+zastępując plan konta. Plany z kont nie są kopiowane do lokalnego planu gościa.
+Pierwsze otwarcie zawiera edytowalny przykład. Wyniki należy przeliczyć po zmianie
+danych lub ponownym otwarciu strony. To model planistyczny, nie gwarancja terminów.
+
+## Konfiguracja Firebase (wymagana przed korzystaniem z bazy)
+
+Strona publiczna: https://anka1975.github.io/dashboard1/.
+Konfiguracja aplikacji webowej projektu `dashboard1-ef52e` znajduje się
+w `roadmap-cloud.js`. Nie wymaga Analytics ani Firebase Hosting. Konfiguracja
+webowa jest publiczna; ochronę danych zapewniają logowanie i reguły Firestore,
+nie ukrywanie `apiKey`. Nie dodawaj do repozytorium kluczy kont usług.
+
+W konsoli Firebase:
+
+1. W **Authentication → Sign-in method** włącz dostawcę **Google** i ustaw adres
+   kontaktowy projektu.
+2. W **Authentication → Settings → Authorized domains** dodaj
+   `anka1975.github.io`. Do testów lokalnych dodaj również `localhost`.
+3. Utwórz bazę **Cloud Firestore** o identyfikatorze `(default)` w trybie
+   produkcyjnym, najlepiej w regionie UE.
+4. W **Firestore Database → Rules** wklej całą zawartość pliku
+   [`firestore.rules`](./firestore.rules) i kliknij **Publish**. Nie używaj reguł
+   pozwalających wszystkim na odczyt lub zapis. Dostęp jest dozwolony wyłącznie
+   właścicielowi dokumentu; pozostałe ścieżki są domyślnie zablokowane.
+
+Alternatywnie reguły może wdrożyć właściciel projektu z Firebase CLI:
+`firebase login`, następnie
+`firebase deploy --only firestore:rules --project dashboard1-ef52e`.
+Samo opublikowanie strony przez GitHub Pages **nie publikuje reguł Firebase**.
+
+Po konfiguracji zaloguj się na stronie, zmień plan i poczekaj na komunikat
+„Zapisano prywatny plan w Firebase”. Na drugim urządzeniu zaloguj się na to samo
+konto i sprawdź dane. Inne konto powinno otrzymać osobny plan. W Firestore Rules
+Playground sprawdź też, że anonimowy użytkownik i inne UID nie mogą odczytać ani
+zapisać dokumentu właściciela.
 
 ## Uruchomienie lokalne
 
 Uruchom serwer statyczny w katalogu repozytorium, np. `python3 -m http.server 8000`,
 i otwórz `http://localhost:8000`. Dotychczasowe wykresy wymagają dostępu do CDN
-Chart.js i SheetJS; nowa zakładka nie ma zewnętrznych zależności.
+Chart.js i SheetJS; zapis w chmurze wymaga Firebase SDK pobieranego z
+`www.gstatic.com` oraz połączenia z usługami Firebase. Przy niedostępnym SDK
+strona pokazuje błąd i udostępnia tylko plan lokalny.
 
 Testy silnika prognozowania: `node --test roadmap-engine.test.cjs`.
+Testy integracji zapisu (z atrapami Firebase, bez dostępu do produkcyjnej bazy):
+`node --experimental-vm-modules --test roadmap-cloud.test.cjs roadmap.test.cjs`.
