@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/plans/roadmap {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == userId;
+      }
+      function validPlan() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['schemaVersion', 'revision', 'plan', 'updatedAt'])
+          && data.keys().hasOnly(['schemaVersion', 'revision', 'plan', 'updatedAt'])
+          && data.schemaVersion == 1
+          && data.revision is int
+          && data.plan is map
+          && data.plan.keys().hasAll(['skills', 'teams', 'initiatives'])
+          && data.plan.keys().hasOnly(['skills', 'teams', 'initiatives'])
+          && data.plan.skills is list
+          && data.plan.teams is list
+          && data.plan.initiatives is list
+          && data.updatedAt == request.time;
+      }
+      allow read: if isOwner();
+      allow create: if isOwner() && validPlan() && request.resource.data.revision == 1;
+      allow update: if isOwner() && validPlan()
+        && request.resource.data.revision == resource.data.revision + 1;
+      allow delete: if isOwner();
+    }
+  }
+}

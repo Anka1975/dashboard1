@@ -1,4 +1,6 @@
 #roadmapPanel { display: grid; gap: 16px; }
+#roadmapEditor { display: grid; gap: 16px; }
+#roadmapCloudStatus { overflow-wrap: anywhere; }
 #roadmapPanel h2 { font-size: 1.05rem; }
 #roadmapPanel p { line-height: 1.55; }
 #roadmapPanel input:not([type="checkbox"]), #roadmapPanel select { max-width: 100%; }

@@ -6,6 +6,20 @@
   const storageKey = "dashboard-roadmap-v1";
   const panel = document.getElementById("roadmapPanel");
   const status = document.getElementById("roadmapStatus");
+  const cloudStatus = document.getElementById("roadmapCloudStatus");
+  const editor = document.getElementById("roadmapEditor");
+  const loginButton = document.getElementById("roadmapLogin");
+  const logoutButton = document.getElementById("roadmapLogout");
+  const reloadButton = document.getElementById("roadmapReload");
+  const retryButton = document.getElementById("roadmapRetry");
+  const importButton = document.getElementById("roadmapImport");
+  let cloud;
+  let user = null;
+  let cloudReady = false;
+  let revision = 0;
+  let pending = null;
+  let saving = null;
+  let session = 0;
   const uid = () => crypto.randomUUID();
   const today = () => {
     const now = new Date();
@@ -55,6 +69,7 @@
   }
   let plan;
   let restored = false;
+  let localReadError = false;
   let persistenceError = "";
   try {
     const saved = localStorage.getItem(storageKey);
@@ -62,9 +77,9 @@
     plan = saved ? JSON.parse(saved) : sample();
     if (!isPlan(plan)) throw new Error("Niepoprawna struktura zapisanych danych.");
   } catch (error) {
-    status.textContent = `Nie można wczytać planu: ${error.message} Zapis nie został nadpisany.`;
-    panel.querySelectorAll("button, input").forEach((control) => { control.disabled = true; });
-    return;
+    localReadError = true;
+    persistenceError = `Nie można wczytać planu: ${error.message} Zapis nie został nadpisany.`;
+    plan = sample();
   }
   function ensureCapacity() {
     for (const team of plan.teams) {
@@ -77,6 +92,13 @@
     }
   }
   function save() {
+    if (user) {
+      if (!cloudReady) return;
+      pending = JSON.parse(JSON.stringify(plan));
+      void flushCloud();
+      return;
+    }
+    if (localReadError) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(plan));
       persistenceError = "";
@@ -86,8 +108,163 @@
   }
   function stale() {
     document.getElementById("roadmapResults").textContent = "Dane zmienione — przelicz prognozę.";
-    status.textContent = persistenceError || "Dane zapisane lokalnie w tej przeglądarce. Prognoza wymaga przeliczenia.";
+    status.textContent = persistenceError || (user
+      ? "Dane zmienione. Stan zapisu w Firebase jest widoczny powyżej. Prognoza wymaga przeliczenia."
+      : "Dane zapisane lokalnie w tej przeglądarce. Prognoza wymaga przeliczenia.");
   }
+  function lockEditor(locked) {
+    editor.inert = locked;
+    document.getElementById("forecastRoadmap").disabled = locked;
+  }
+  function flushCloud() {
+    if (saving) return saving;
+    const currentSession = session;
+    const owner = user;
+    const operation = (async () => {
+      retryButton.hidden = true;
+      while (pending && owner && currentSession === session) {
+        const snapshot = pending;
+        pending = null;
+        cloudStatus.textContent = "Zapisywanie prywatnego planu w Firebase…";
+        try {
+          const nextRevision = await cloud.save(owner.uid, snapshot, revision);
+          if (currentSession !== session) return false;
+          revision = nextRevision;
+        } catch (error) {
+          if (currentSession !== session) return false;
+          pending ??= snapshot;
+          retryButton.hidden = false;
+          cloudStatus.textContent = `Nie zapisano w bazie: ${error.message} Zmiany pozostają w tej karcie.`;
+          return false;
+        }
+      }
+      if (currentSession === session) {
+        cloudStatus.textContent = `Zapisano prywatny plan w Firebase. Konto: ${owner.email || owner.uid}.`;
+      }
+      return true;
+    })().finally(() => {
+      if (saving === operation) saving = null;
+    });
+    saving = operation;
+    return operation;
+  }
+  async function loadAccount(nextUser, authError) {
+    const currentSession = ++session;
+    user = nextUser;
+    cloudReady = false;
+    pending = null;
+    saving = null;
+    persistenceError = "";
+    retryButton.hidden = true;
+    importButton.hidden = true;
+    loginButton.hidden = Boolean(user);
+    logoutButton.hidden = !user;
+    reloadButton.hidden = !user;
+    lockEditor(true);
+    // Remove the previous account's content before starting any network request.
+    plan = sample();
+    ensureCapacity();
+    render();
+    document.getElementById("roadmapResults").textContent = "Przelicz prognozę po wczytaniu planu.";
+    status.textContent = "";
+    if (authError) {
+      cloudStatus.textContent = `Błąd uwierzytelnienia Firebase: ${authError.message} Odśwież stronę, aby spróbować ponownie.`;
+      return;
+    }
+    if (!user) {
+      try {
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+          const local = JSON.parse(saved);
+          if (!isPlan(local)) throw new Error("Niepoprawna struktura lokalnego planu.");
+          plan = local;
+        }
+        ensureCapacity();
+        render();
+        localReadError = false;
+        lockEditor(false);
+        cloudStatus.textContent = "Tryb lokalny — zaloguj się, aby zapisywać prywatny plan w Firebase.";
+      } catch (error) {
+        localReadError = true;
+        cloudStatus.textContent = `Nie można wczytać lokalnego planu: ${error.message} Zapis nie został nadpisany.`;
+      }
+      return;
+    }
+    cloudStatus.textContent = "Wczytywanie prywatnego planu z Firebase…";
+    reloadButton.disabled = true;
+    try {
+      const saved = await cloud.load(user.uid);
+      if (currentSession !== session) return;
+      if (saved.plan !== null && !isPlan(saved.plan)) throw new Error("Niepoprawna struktura planu w bazie.");
+      revision = saved.revision;
+      plan = saved.plan ?? sample();
+      ensureCapacity();
+      render();
+      cloudReady = true;
+      lockEditor(false);
+      importButton.hidden = false;
+      cloudStatus.textContent = saved.plan
+        ? `Wczytano prywatny plan z Firebase. Konto: ${user.email || user.uid}. Zmiany zapisują się automatycznie.`
+        : "To konto nie ma jeszcze planu. Edytuj przykład lub zaimportuj lokalny plan.";
+      if (saved.plan === null) save();
+    } catch (error) {
+      if (currentSession !== session) return;
+      cloudStatus.textContent = `Nie można wczytać planu z Firebase: ${error.message} Edycja zablokowana, aby nie nadpisać danych. Sprawdź logowanie Google, domenę i reguły Firestore.`;
+    } finally {
+      if (currentSession === session) reloadButton.disabled = false;
+    }
+  }
+  loginButton.addEventListener("click", async () => {
+    loginButton.disabled = true;
+    try {
+      await cloud.login();
+    } catch (error) {
+      cloudStatus.textContent = `Nie udało się zalogować: ${error.message}`;
+    } finally {
+      loginButton.disabled = false;
+    }
+  });
+  logoutButton.addEventListener("click", async () => {
+    logoutButton.disabled = true;
+    lockEditor(true);
+    try {
+      if ((pending || saving) && !await flushCloud()) return;
+      await cloud.logout();
+    } catch (error) {
+      cloudStatus.textContent = `Nie udało się wylogować: ${error.message}`;
+    } finally {
+      logoutButton.disabled = false;
+      if (cloudReady) lockEditor(false);
+    }
+  });
+  reloadButton.addEventListener("click", async () => {
+    if (saving) {
+      cloudStatus.textContent = "Trwa zapis — poczekaj na jego zakończenie.";
+      return;
+    }
+    if (pending && !confirm("Wczytać plan z bazy i odrzucić niezapisane zmiany w tej karcie?")) return;
+    await loadAccount(user);
+  });
+  retryButton.addEventListener("click", () => { void flushCloud(); });
+  importButton.addEventListener("click", () => {
+    if (!cloudReady || !confirm("Zastąpić plan na tym koncie planem zapisanym lokalnie w tej przeglądarce?")) return;
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (!saved) throw new Error("Brak lokalnego planu do zaimportowania.");
+      const local = JSON.parse(saved);
+      if (!isPlan(local)) throw new Error("Niepoprawna struktura lokalnego planu.");
+      plan = local;
+      changed();
+    } catch (error) {
+      cloudStatus.textContent = `Import nie powiódł się: ${error.message}`;
+    }
+  });
+  window.addEventListener("beforeunload", (event) => {
+    if (pending || saving) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  });
   const skillName = (id) => plan.skills.find((skill) => skill.id === id)?.name || "";
   function choices(selected, kind, id) {
     return `<fieldset class="roadmap-choices"><legend>Wymagane kompetencje</legend><div class="row wrap">${
@@ -260,17 +437,21 @@
       return;
     }
     const button = event.currentTarget;
+    const forecastSession = session;
     button.disabled = true;
     status.textContent = "Trwa 2000 symulacji…";
     // Let the browser paint the busy state before calculating.
     await new Promise((resolve) => setTimeout(resolve, 30));
+    if (forecastSession !== session) return;
     try {
       renderResults(engine.simulate(plan, months));
-      status.textContent = persistenceError || "Prognoza gotowa. Dane wejściowe zapisane lokalnie; wynik jest przeliczany przy każdym uruchomieniu.";
+      status.textContent = persistenceError || (user
+        ? "Prognoza gotowa. Stan zapisu danych wejściowych w Firebase jest widoczny powyżej."
+        : "Prognoza gotowa. Dane wejściowe zapisane lokalnie; wynik jest przeliczany przy każdym uruchomieniu.");
     } catch (error) {
       status.textContent = `Nie udało się obliczyć prognozy: ${error.message}`;
     } finally {
-      button.disabled = false;
+      button.disabled = editor.inert;
     }
   });
   ensureCapacity();
@@ -279,4 +460,13 @@
   status.textContent = persistenceError || (restored
     ? "Przywrócono plan zapisany w tej przeglądarce. Przelicz prognozę dla aktualnego kalendarza."
     : "Dane są zapisywane lokalnie w tej przeglądarce. Początkowy plan zawiera edytowalne przykłady.");
+  lockEditor(true);
+  import("./roadmap-cloud.js").then((module) => {
+    cloud = module;
+    cloud.connect(loadAccount);
+    loginButton.disabled = false;
+  }).catch((error) => {
+    cloudStatus.textContent = `Firebase jest niedostępne: ${error.message} Dostępny jest tylko zapis lokalny. Odśwież stronę, aby ponowić połączenie.`;
+    lockEditor(localReadError);
+  });
 })();

@@ -24,6 +24,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Test roadmap and cloud persistence
+        run: node --experimental-vm-modules --test roadmap-engine.test.cjs roadmap-cloud.test.cjs roadmap.test.cjs
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
