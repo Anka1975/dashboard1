@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dashboard Lead Time</title>
+    <link rel="stylesheet" href="./roadmap.css" />
+    <script defer src="./roadmap-engine.js"></script>
+    <script defer src="./roadmap.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
@@ -173,6 +176,7 @@
       <div class="row wrap tabs" role="tablist" aria-label="Widok dashboardu">
         <button id="leadTimeTab" role="tab" aria-selected="true" aria-controls="leadTimePanel">Czas realizacji</button>
         <button id="deliveryTab" role="tab" aria-selected="false" aria-controls="deliveryPanel" tabindex="-1">Tempo dostarczania</button>
+        <button id="roadmapTab" role="tab" aria-selected="false" aria-controls="roadmapPanel" tabindex="-1">Roadmapa i prognozy</button>
       </div>
 
       <div id="leadTimePanel" role="tabpanel" aria-labelledby="leadTimeTab">
@@ -314,6 +318,53 @@
             <p class="sub">MR = |tempo bieżącej obserwacji − tempo poprzedniej obserwacji|. Pierwsza obserwacja nie ma MR; średnia MR obejmuje wyłącznie kolejne pary po filtrowaniu. Oba wykresy korzystają z tych samych filtrów tej zakładki, niezależnych od filtrów czasu realizacji.</p>
           </section>
         </div>
+      </section>
+      <section id="roadmapPanel" role="tabpanel" aria-labelledby="roadmapTab" hidden>
+        <div class="row wrap">
+          <div>
+            <h2>Roadmapa wielu zespołów</h2>
+            <p class="sub">Planowanie capacity i prognoza Monte Carlo · poziom ufności 85%</p>
+          </div>
+          <button id="forecastRoadmap" class="primary">Przelicz prognozę · 2000 symulacji</button>
+        </div>
+        <p id="roadmapStatus" role="status" aria-live="polite"></p>
+        <details class="panel">
+          <summary>Jak interpretować model?</summary>
+          <p>Min/max to czas pracy w osobodniach przy pełnej dostępności jednej osoby, osobno dla każdej kompetencji elementu. Losowanie jest jednostajne i niezależne. Capacity to dostępne osobodni w miesiącu, rozłożone równomiernie na dni kalendarzowe (uwzględnij urlopy i dni wolne w capacity).</p>
+          <p>Elementy w inicjatywie są realizowane kolejno. Różne inicjatywy mogą pracować równolegle; współdzielą pule zespołu i kompetencji. Kolejność inicjatyw jest priorytetem przy konflikcie capacity. Kompetencje elementu pracują równolegle; kolejny element rusza następnego dnia po ukończeniu poprzedniego. Pule kompetencji są niezależne — nie wpisuj tej samej dostępności osoby wielokrotnie.</p>
+          <p>P85 to data, do której element ukończył się w co najmniej 85% symulacji, nie gwarancja. Fixed date to termin graniczny, nie wymuszone zakończenie ani priorytet. Brak P85 oznacza, że co najmniej 85% ukończeń nie mieści się w kalendarzu. Capacity poza pokazanymi 12 miesiącami nie jest ekstrapolowane.</p>
+        </details>
+        <div class="roadmap-grid">
+          <section class="panel">
+            <h2>1. Kompetencje</h2>
+            <div id="roadmapSkills" class="row wrap"></div>
+            <form id="addRoadmapSkill" class="row wrap">
+              <label>Nazwa <input name="name" required maxlength="80" /></label>
+              <button>Dodaj kompetencję</button>
+            </form>
+          </section>
+          <section class="panel">
+            <h2>2. Zespoły</h2>
+            <div id="roadmapTeams" class="stack"></div>
+            <button id="addRoadmapTeam">+ Dodaj zespół</button>
+          </section>
+        </div>
+        <section class="panel">
+          <h2>3. Kalendarz capacity · osobodni / miesiąc</h2>
+          <p class="sub">12 miesięcy od bieżącego miesiąca. Zero oznacza brak dostępności. Zmiana kompetencji zespołu zachowuje wcześniejsze wpisy capacity.</p>
+          <div id="roadmapCapacity" class="roadmap-scroll"></div>
+        </section>
+        <section class="panel">
+          <h2>4. Inicjatywy i elementy</h2>
+          <p class="sub">Kolejność od góry określa priorytet. Każdy element korzysta z zaznaczonych kompetencji swojej inicjatywy i wybranego zespołu.</p>
+          <div id="roadmapInitiatives" class="stack"></div>
+          <button id="addRoadmapInitiative">+ Dodaj inicjatywę</button>
+        </section>
+        <section class="panel">
+          <h2>5. Gantt · prognozowane zakończenia P85</h2>
+          <p class="sub">Jasny pasek: P50 startu → P50 końca. Przedłużenie: P85 końca. Kreskowany pasek: P85 poza horyzontem. Czerwona kreska: fixed date. Dokładne daty i ryzyko w tabeli poniżej.</p>
+          <div id="roadmapResults"><p>Wprowadź dane i przelicz prognozę. Początkowe dane są przykładowe.</p></div>
+        </section>
       </section>
     </main>
 
